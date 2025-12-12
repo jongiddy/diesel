@@ -1274,6 +1274,63 @@ fn __diesel_public_if_inner(
         .unwrap_or_else(syn::Error::into_compile_error)
 }
 
+#[doc(hidden)]
+#[proc_macro_attribute]
+pub fn expand_for_tuple(attrs: TokenStream, item: TokenStream) -> TokenStream {
+    expand_for_tuple_inner(attrs.into(), item.into()).into()
+}
+
+fn expand_for_tuple_inner(attrs: proc_macro2::TokenStream, item: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+    use crate::syn::spanned::Spanned as _;
+    let range = match syn::parse2::<syn::ExprRange>(attrs) {
+        Ok(range) => range,
+        Err(err) => return err.into_compile_error(),
+    };
+    let Some(start_expr) = range.start else {
+        return syn::Error::new(range.span(), "Minimum tuple length required").into_compile_error();
+    };
+    let syn::Expr::Lit(syn::ExprLit{lit: syn::Lit::Int(start), ..}) = &*start_expr else {
+        return syn::Error::new(start_expr.span(), "Minimum tuple length must be an integer").into_compile_error();
+    };
+    let min = match start.base10_parse::<usize>() {
+        Ok(val) =>  val,
+        Err(err) => return err.into_compile_error(),
+    };
+
+    let end = match range.end.as_deref() {
+        Some(end_expr) => {
+            let syn::Expr::Lit(syn::ExprLit{lit: syn::Lit::Int(end), ..}) = &*end_expr else {
+                return syn::Error::new(end_expr.span(), "Maximum tuple length required").into_compile_error();
+            };
+            match end.base10_parse::<usize>() {
+                Ok(val) =>  Some(val),
+                Err(err) => return err.into_compile_error(),
+            }
+        }
+        None => None
+    };
+
+    let max = match range.limits {
+        syn::RangeLimits::HalfOpen(_) => match end {
+            Some(end) => end - 1,
+            None => diesel_for_each_tuple::MAX_TUPLE_SIZE.try_into().unwrap(),
+        }
+        syn::RangeLimits::Closed(_) => {
+            let Some(max) = end else {
+                return syn::Error::new(range.end.span(), "Maximum tuple length required").into_compile_error();
+            };
+            max
+        },
+    };
+
+    quote::quote! {
+        #[typle::typle(Tuple for #min..=#max, suffixes = [""])]
+        #[typle_attr_if(Tuple::LEN == #min, cfg_attr(diesel_docsrs, doc(fake_variadic)))]
+        #[typle_attr_if(Tuple::LEN != #min, cfg_attr(diesel_docsrs, doc(hidden)))]
+        #item
+    }
+}
+
 /// Specifies that a table exists, and what columns it has. This will create a
 /// new public module, with the same name, as the name of the table. In this
 /// module, you will find a unit struct named `table`, and a unit struct with the

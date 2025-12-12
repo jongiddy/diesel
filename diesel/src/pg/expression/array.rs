@@ -94,32 +94,20 @@ where
 // SelectStatement<CustomType, ...>)
 // This is not implemented with other tuple impls because this is feature-flagged by
 // `postgres-backend`
-macro_rules! tuple_impls {
-    ($(
-        $Tuple:tt {
-            $(($idx:tt) -> $T:ident, $ST:ident, $TT:ident,)+
+#[diesel_derives::expand_for_tuple(1..)]
+impl<T: Tuple, ST> IntoArrayExpression<ST> for T
+where
+    T<_>: AsExpression<ST>,
+    ST: SqlType + TypedExpressionType,
+{
+    type ArrayExpression = ArrayLiteral<(typle! {i in .. => T<{i}>::Expression}), ST>;
+    fn into_array_expression(self) -> Self::ArrayExpression {
+        ArrayLiteral {
+            elements: (typle! {i in .. => self[[i]].as_expression()}),
+            _marker: PhantomData,
         }
-    )+) => {
-        $(
-            impl<$($T,)+ ST> IntoArrayExpression<ST> for ($($T,)+) where
-                $($T: AsExpression<ST>,)+
-                ST: SqlType + TypedExpressionType,
-            {
-                type ArrayExpression = ArrayLiteral<($($T::Expression,)+), ST>;
-
-                fn into_array_expression(self) -> Self::ArrayExpression {
-                    ArrayLiteral {
-                        elements: ($(self.$idx.as_expression(),)+),
-                        _marker: PhantomData,
-                    }
-                }
-            }
-        )+
     }
 }
-
-diesel_derives::__diesel_for_each_tuple!(tuple_impls);
-
 /// An ARRAY[...] literal.
 #[derive(Debug, Clone, Copy, QueryId)]
 pub struct ArrayLiteral<T, ST> {

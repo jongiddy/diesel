@@ -16,7 +16,7 @@ use crate::query_source::{QueryRelation, QueryRelationField, TableNotEqual};
 pub trait FieldAliasMapper<S> {
     /// Output type when mapping `C` to `Alias<S>`
     ///
-    /// If `C: Column<Table = S::Table>`, `Out = AliasedField<S, C>`  
+    /// If `C: Column<Table = S::Table>`, `Out = AliasedField<S, C>`
     /// Otherwise, `Out = C`
     type Out;
 
@@ -67,31 +67,18 @@ where
     }
 }
 
-macro_rules! field_alias_mapper {
-    ($(
-        $Tuple:tt {
-            $(($idx:tt) -> $T:ident, $ST:ident, $TT:ident,)+
-        }
-    )+) => {
-        $(
-            impl<_S, $($T,)*> FieldAliasMapper<_S> for ($($T,)*)
-            where
-                _S: AliasSource,
-                $($T: FieldAliasMapper<_S>,)*
-            {
-                type Out = ($(<$T as FieldAliasMapper<_S>>::Out,)*);
+#[diesel_derives::expand_for_tuple(1..)]
+impl<_S, T: Tuple> FieldAliasMapper<_S> for T
+where
+    _S: AliasSource,
+    T<_>: FieldAliasMapper<_S>,
+{
+    type Out = (typle! {i in .. => <T<{i}> as FieldAliasMapper<_S>>::Out});
 
-                fn map(self, alias: &Alias<_S>) -> Self::Out {
-                    (
-                        $(self.$idx.map(alias),)*
-                    )
-                }
-            }
-        )*
+    fn map(self, alias: &Alias<_S>) -> Self::Out {
+        (typle! {i in .. => self[[i]].map(alias)})
     }
 }
-
-diesel_derives::__diesel_for_each_tuple!(field_alias_mapper);
 
 // The following `FieldAliasMapper` impls are useful for the generic join implementations.
 // More may be added.

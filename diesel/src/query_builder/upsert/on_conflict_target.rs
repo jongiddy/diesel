@@ -67,55 +67,25 @@ where
 
 impl<Tab, ST> OnConflictTarget<Tab> for ConflictTarget<SqlLiteral<ST>> {}
 
-impl<DB, T, SP> QueryFragment<DB, SP> for ConflictTarget<(T,)>
+#[diesel_derives::expand_for_tuple(1..)]
+impl<_DB, _SP, T: Tuple, Table> QueryFragment<_DB, _SP> for ConflictTarget<T>
 where
-    DB: Backend<OnConflictClause = SP>,
-    SP: sql_dialect::on_conflict_clause::PgLikeOnConflictClause,
-    T: Column,
+    _DB: Backend<OnConflictClause = _SP>,
+    _SP: sql_dialect::on_conflict_clause::PgLikeOnConflictClause,
+    T<_>: Column<Table = Table>,
 {
-    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, DB>) -> QueryResult<()> {
+    fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, _DB>) -> QueryResult<()> {
         out.push_sql(" (");
-        out.push_identifier(T::NAME)?;
+        out.push_identifier(T::<0>::NAME)?;
+        for typle_index!(i) in 1..T::LEN {
+            out.push_sql(", ");
+            out.push_identifier(T::<{ i }>::NAME)?;
+        }
         out.push_sql(")");
         Ok(())
     }
 }
 
-impl<T> OnConflictTarget<T::Table> for ConflictTarget<(T,)> where T: Column {}
-
-macro_rules! on_conflict_tuples {
-    ($(
-        $Tuple:tt {
-            $(($idx:tt) -> $T:ident, $ST:ident, $TT:ident,)*
-        }
-    )+) => {
-        $(
-            impl<_DB, _T, _SP, $($T),*> QueryFragment<_DB, _SP> for ConflictTarget<(_T, $($T),*)> where
-                _DB: Backend<OnConflictClause = _SP>,
-                _SP: sql_dialect::on_conflict_clause::PgLikeOnConflictClause,
-                _T: Column,
-                $($T: Column<Table=_T::Table>,)*
-            {
-                fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, _DB>) -> QueryResult<()>
-                {
-                    out.push_sql(" (");
-                    out.push_identifier(_T::NAME)?;
-                    $(
-                        out.push_sql(", ");
-                        out.push_identifier($T::NAME)?;
-                    )*
-                    out.push_sql(")");
-                    Ok(())
-                }
-            }
-
-            impl<_T, $($T),*> OnConflictTarget<_T::Table> for ConflictTarget<(_T, $($T),*)> where
-                _T: Column,
-                $($T: Column<Table=_T::Table>,)*
-            {
-            }
-        )*
-    }
-}
-
-diesel_derives::__diesel_for_each_tuple!(on_conflict_tuples);
+#[diesel_derives::expand_for_tuple(1..)]
+impl<T: Tuple, Table> OnConflictTarget<Table> for ConflictTarget<T> where T<_>: Column<Table = Table>
+{}

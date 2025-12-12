@@ -78,28 +78,18 @@ impl From<u32> for OrderColumn {
     }
 }
 
-macro_rules! impl_positional_order_expr_for_all_tuples {
-    ($(
-        $unused1:tt {
-            $(($idx:tt) -> $T:ident, $U:ident, $unused3:tt,)+
-        }
-    )+) => {
-        $(
-            impl<$($T: PositionalOrderExpr),+> PositionalOrderExpr for ($($T,)+) { }
+#[diesel_derives::expand_for_tuple(1..)]
+impl<T: Tuple> PositionalOrderExpr for T where T<_>: PositionalOrderExpr {}
 
-            impl<$($T, $U,)+> IntoPositionalOrderExpr for ($($T,)+)
-            where
-                $($T: IntoPositionalOrderExpr<Output = $U>,)+
-                $($U: PositionalOrderExpr,)+
-            {
-                type Output = ($($U,)+);
+#[diesel_derives::expand_for_tuple(1..)]
+impl<T: Tuple, U: Tuple> IntoPositionalOrderExpr for T
+where
+    typle!(i in .. => T<{i}>: IntoPositionalOrderExpr<Output = U<{i}>>): Tuple::Bounds,
+    U<_>: PositionalOrderExpr,
+{
+    type Output = U;
 
-                fn into_positional_expr(self) -> Self::Output {
-                    ($(self.$idx.into_positional_expr(),)+)
-                }
-            }
-        )+
-    };
+    fn into_positional_expr(self) -> Self::Output {
+        (typle! {i in .. => self[[i]].into_positional_expr()})
+    }
 }
-
-diesel_derives::__diesel_for_each_tuple!(impl_positional_order_expr_for_all_tuples);
